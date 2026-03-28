@@ -3,11 +3,15 @@
   "compilerOptions": {
     "jsx": "preserve",
     "plugins": [{ "name": "next" }],
+    "declaration": false,
+    "declarationMap": false,
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
+      "@/*": ["./*"],
       "@release-loop/domain": ["../../packages/domain/src"],
       "@release-loop/spotify-client": ["../../packages/spotify-client/src"],
-      "@release-loop/ui": ["../../packages/ui/src"]
+      "@release-loop/ui": ["../../packages/ui/src"],
+      "@release-loop/config/*": ["../../packages/config/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

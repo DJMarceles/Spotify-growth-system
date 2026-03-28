@@ -1,4 +1,14 @@
-export default function HomePage() {
+import { redirect } from 'next/navigation';
+import { auth } from '@/lib/auth';
+import { LoginButton } from '@/components/auth/login-button';
+
+export default async function HomePage() {
+  const session = await auth();
+
+  if (session?.user) {
+    redirect('/dashboard');
+  }
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-8">
       <div className="max-w-2xl text-center">
@@ -10,12 +20,7 @@ export default function HomePage() {
           container playlists, and run structured release cycles.
         </p>
         <div className="mt-10 flex items-center justify-center gap-x-6">
-          <a
-            href="/dashboard"
-            className="rounded-md bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
-          >
-            Get started
-          </a>
+          <LoginButton />
         </div>
       </div>
     </main>
