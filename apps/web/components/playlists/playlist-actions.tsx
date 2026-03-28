@@ -19,12 +19,18 @@ export function PlaylistActions({ playlistId, hasSpotifyId }: PlaylistActionsPro
 
     try {
       const res = await fetch(`/api/playlists/${playlistId}/${action}`, {
-        method: action === 'snapshot' ? 'POST' : 'POST',
+        method: 'POST',
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? `${action} failed`);
+        let message = `${action} failed`;
+        try {
+          const data = await res.json();
+          message = data.error ?? message;
+        } catch {
+          // Response wasn't JSON
+        }
+        throw new Error(message);
       }
 
       const data = await res.json();

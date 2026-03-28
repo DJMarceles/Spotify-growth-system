@@ -139,34 +139,34 @@ export async function refreshPlaylist(
     playlist.items,
   );
 
-  // Step 3: Apply replacements in database
+  // Step 3: Apply replacements in a transaction to avoid position constraint violations
   const tracksRemoved: RefreshResult['tracksRemoved'] = [];
   const tracksAdded: RefreshResult['tracksAdded'] = [];
 
-  for (const replacement of replacements) {
-    // Remove old item
-    await db.playlistItem.delete({ where: { id: replacement.oldItemId } });
-    tracksRemoved.push({
-      trackId: replacement.oldTrackId,
-      name: replacement.oldTrackName,
-      reason: replacement.reason,
-    });
+  await db.$transaction(async (tx) => {
+    for (const replacement of replacements) {
+      await tx.playlistItem.delete({ where: { id: replacement.oldItemId } });
+      tracksRemoved.push({
+        trackId: replacement.oldTrackId,
+        name: replacement.oldTrackName,
+        reason: replacement.reason,
+      });
 
-    // Add new item at same position
-    await db.playlistItem.create({
-      data: {
-        playlistId,
+      await tx.playlistItem.create({
+        data: {
+          playlistId,
+          trackId: replacement.newTrack.id,
+          position: replacement.position,
+          source: replacement.newSource,
+        },
+      });
+      tracksAdded.push({
         trackId: replacement.newTrack.id,
-        position: replacement.position,
+        name: replacement.newTrack.name,
         source: replacement.newSource,
-      },
-    });
-    tracksAdded.push({
-      trackId: replacement.newTrack.id,
-      name: replacement.newTrack.name,
-      source: replacement.newSource,
-    });
-  }
+      });
+    }
+  });
 
   // Step 4: Update track count
   const newCount = await db.playlistItem.count({ where: { playlistId } });
@@ -408,7 +408,7 @@ async function findReplacementTracks(
     where: { sourceArtistId },
     include: {
       neighborArtist: {
-        include: { tracks: { orderBy: { popularity: 'desc' } } },
+        include: { tracks: { orderBy: { popularity: 'desc' }, take: 20 } },
       },
     },
     orderBy: { adjacencyScore: 'desc' },
@@ -587,13 +587,13 @@ function computeFreshness(
 ): number {
   if (items.length === 0) return 0;
 
-  const now = new Date();
-  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   let freshCount = 0;
 
   for (const item of items) {
     const releaseDate = new Date(item.track.releaseDate);
-    if (releaseDate >= sixMonthsAgo) freshCount++;
+    if (!isNaN(releaseDate.getTime()) && releaseDate >= sixMonthsAgo) freshCount++;
   }
 
   return freshCount / items.length;
