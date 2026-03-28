@@ -54,14 +54,25 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
   if (hasAnalysis) {
     const buckets = { smaller: 0, similar: 0, 'slightly-larger': 0, 'much-larger': 0 };
     let totalScore = 0;
+    let highRisk = 0;
+    let mediumRisk = 0;
+
     for (const n of neighbors) {
       const b = n.sizeBucket as keyof typeof buckets;
       if (b in buckets) buckets[b]++;
       totalScore += n.adjacencyScore;
+      if (n.closedLoopRisk === 'high') highRisk++;
+      else if (n.closedLoopRisk === 'medium') mediumRisk++;
     }
+
     const avgScore = totalScore / neighbors.length;
-    const smallerRatio = (buckets.smaller + buckets.similar) / neighbors.length;
-    overallRisk = smallerRatio >= 0.7 ? 'high' : smallerRatio >= 0.5 ? 'medium' : 'low';
+    const riskRatio = (highRisk + mediumRisk) / neighbors.length;
+    overallRisk =
+      riskRatio >= 0.7 || highRisk / neighbors.length >= 0.5
+        ? 'high'
+        : riskRatio >= 0.4
+          ? 'medium'
+          : 'low';
 
     summary = {
       totalAnalyzed: neighbors.length,

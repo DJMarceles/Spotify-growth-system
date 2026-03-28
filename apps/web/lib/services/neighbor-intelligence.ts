@@ -1,6 +1,7 @@
 import { db } from '../db';
 
 const SCORING_SERVICE_URL = process.env.SCORING_SERVICE_URL ?? 'http://localhost:8000';
+const SCORING_TIMEOUT_MS = 30_000;
 
 interface ScoringRequest {
   source_artist: {
@@ -42,6 +43,7 @@ export interface AnalysisResult {
   }>;
   summary: {
     totalAnalyzed: number;
+    totalFailed: number;
     slightlyLarger: number;
     similar: number;
     smaller: number;
@@ -55,7 +57,6 @@ export interface AnalysisResult {
  * Persists ArtistNeighbor records and computes overall closed-loop risk.
  */
 export async function analyzeNeighbors(artistId: string): Promise<AnalysisResult> {
-  // Load source artist with their related artists and latest track release date
   const artist = await db.artist.findUnique({
     where: { id: artistId },
     include: {
@@ -84,6 +85,7 @@ export async function analyzeNeighbors(artistId: string): Promise<AnalysisResult
       neighbors: [],
       summary: {
         totalAnalyzed: 0,
+        totalFailed: 0,
         slightlyLarger: 0,
         similar: 0,
         smaller: 0,
@@ -95,8 +97,7 @@ export async function analyzeNeighbors(artistId: string): Promise<AnalysisResult
 
   const sourceLatestRelease = artist.tracks[0]?.releaseDate ?? null;
 
-  // Score each related artist via the scoring service
-  const scoredNeighbors = await scoreAllNeighbors(
+  const { scored: scoredNeighbors, failedCount } = await scoreAllNeighbors(
     artist,
     sourceLatestRelease,
     relatedArtists,
@@ -137,10 +138,9 @@ export async function analyzeNeighbors(artistId: string): Promise<AnalysisResult
 
   const avgScore = scoredNeighbors.length > 0 ? totalScore / scoredNeighbors.length : 0;
 
-  // Overall closed loop risk based on the proportion of smaller/similar neighbors
-  const smallerRatio = (bucketCounts.smaller + bucketCounts.similar) / scoredNeighbors.length;
-  const overallClosedLoopRisk: 'low' | 'medium' | 'high' =
-    smallerRatio >= 0.7 ? 'high' : smallerRatio >= 0.5 ? 'medium' : 'low';
+  // Overall closed-loop risk: consistent with per-neighbor Python logic.
+  // A neighbor is "high risk" if it's smaller + low adjacency, or smaller/similar + moderate adjacency.
+  const overallClosedLoopRisk = computeOverallClosedLoopRisk(scoredNeighbors);
 
   return {
     artistId: artist.id,
@@ -156,6 +156,7 @@ export async function analyzeNeighbors(artistId: string): Promise<AnalysisResult
     })),
     summary: {
       totalAnalyzed: scoredNeighbors.length,
+      totalFailed: failedCount,
       slightlyLarger: bucketCounts['slightly-larger'],
       similar: bucketCounts.similar,
       smaller: bucketCounts.smaller,
@@ -193,6 +194,31 @@ interface ScoredNeighbor {
   explanation: string;
 }
 
+/**
+ * Computes overall closed-loop risk consistent with per-neighbor Python logic.
+ * Uses the per-neighbor closedLoopRisk field (which factors in both size bucket
+ * AND adjacency score) rather than just counting buckets.
+ */
+function computeOverallClosedLoopRisk(
+  scoredNeighbors: ScoredNeighbor[],
+): 'low' | 'medium' | 'high' {
+  if (scoredNeighbors.length === 0) return 'high';
+
+  let highRisk = 0;
+  let mediumRisk = 0;
+
+  for (const sn of scoredNeighbors) {
+    if (sn.closedLoopRisk === 'high') highRisk++;
+    else if (sn.closedLoopRisk === 'medium') mediumRisk++;
+  }
+
+  const riskRatio = (highRisk + mediumRisk) / scoredNeighbors.length;
+
+  if (riskRatio >= 0.7 || highRisk / scoredNeighbors.length >= 0.5) return 'high';
+  if (riskRatio >= 0.4) return 'medium';
+  return 'low';
+}
+
 const MAX_CONCURRENT_SCORING = 5;
 
 async function scoreAllNeighbors(
@@ -205,22 +231,27 @@ async function scoreAllNeighbors(
     popularity: number;
     genres: string[];
   }>,
-): Promise<ScoredNeighbor[]> {
+): Promise<{ scored: ScoredNeighbor[]; failedCount: number }> {
   const results: ScoredNeighbor[] = [];
+  let failedCount = 0;
 
-  // Batch scoring calls to avoid overwhelming the service
   for (let i = 0; i < relatedArtists.length; i += MAX_CONCURRENT_SCORING) {
     const batch = relatedArtists.slice(i, i + MAX_CONCURRENT_SCORING);
 
+    // Batch-fetch latest track release dates to avoid N+1 queries
+    const candidateIds = batch.map((c) => c.id);
+    const latestTracks = await db.track.findMany({
+      where: { artistId: { in: candidateIds } },
+      orderBy: { releaseDate: 'desc' },
+      distinct: ['artistId'],
+      select: { artistId: true, releaseDate: true },
+    });
+    const latestReleaseByArtist = new Map(
+      latestTracks.map((t) => [t.artistId, t.releaseDate]),
+    );
+
     const batchResults = await Promise.all(
       batch.map(async (candidate) => {
-        // Get candidate's latest release date from DB
-        const candidateTrack = await db.track.findFirst({
-          where: { artistId: candidate.id },
-          orderBy: { releaseDate: 'desc' },
-          select: { releaseDate: true },
-        });
-
         const request: ScoringRequest = {
           source_artist: {
             follower_count: sourceArtist.followerCount,
@@ -232,7 +263,7 @@ async function scoreAllNeighbors(
             follower_count: candidate.followerCount,
             popularity: candidate.popularity,
             genres: candidate.genres,
-            latest_release_date: candidateTrack?.releaseDate ?? null,
+            latest_release_date: latestReleaseByArtist.get(candidate.id) ?? null,
           },
         };
 
@@ -258,24 +289,36 @@ async function scoreAllNeighbors(
     );
 
     for (const result of batchResults) {
-      if (result) results.push(result);
+      if (result) {
+        results.push(result);
+      } else {
+        failedCount++;
+      }
     }
   }
 
-  return results;
+  return { scored: results, failedCount };
 }
 
 async function callScoringService(request: ScoringRequest): Promise<ScoringResponse> {
-  const response = await fetch(`${SCORING_SERVICE_URL}/api/v1/neighbor-intelligence`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SCORING_TIMEOUT_MS);
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Scoring service error (${response.status}): ${body}`);
+  try {
+    const response = await fetch(`${SCORING_SERVICE_URL}/api/v1/neighbor-intelligence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Scoring service error (${response.status}): ${body}`);
+    }
+
+    return response.json();
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return response.json();
 }
