@@ -6,6 +6,7 @@ import { TopTracksList } from '@/components/artists/top-tracks-list';
 import { NeighborSummary } from '@/components/artists/neighbor-summary';
 import { NeighborScoreCard } from '@/components/artists/neighbor-score-card';
 import { AnalyzeButton } from '@/components/artists/analyze-button';
+import { BuildPlaylistButton } from '@/components/playlists/build-playlist-button';
 
 interface ArtistDetailPageProps {
   params: Promise<{ id: string }>;
@@ -130,6 +131,12 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
             </p>
           </div>
         )}
+      </section>
+
+      {/* Container Playlist Section */}
+      <section className="space-y-4">
+        <h2 className="text-xl font-semibold text-foreground">Container Playlist</h2>
+        <BuildPlaylistButton artistId={artist.id} hasNeighborAnalysis={hasAnalysis} />
       </section>
 
       <section>
