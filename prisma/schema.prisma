@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  image         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  spotifyAccount SpotifyAccount?
+  campaigns      Campaign[]
+
+  @@map("users")
+}
+
+model SpotifyAccount {
+  id           String   @id @default(cuid())
+  userId       String   @unique @map("user_id")
+  spotifyId    String   @unique @map("spotify_id")
+  accessToken  String   @map("access_token")
+  refreshToken String   @map("refresh_token")
+  expiresAt    DateTime @map("expires_at")
+  scopes       String[]
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("spotify_accounts")
+}
+
+// ─── Artists & Tracks ────────────────────────────────────────────────────────
+
+model Artist {
+  id             String   @id @default(cuid())
+  spotifyId      String   @unique @map("spotify_id")
+  name           String
+  genres         String[]
+  followerCount  Int      @map("follower_count")
+  popularity     Int
+  imageUrl       String?  @map("image_url")
+  spotifyUrl     String   @map("spotify_url")
+  lastFetchedAt  DateTime @default(now()) @map("last_fetched_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tracks              Track[]
+  neighborsAsSource   ArtistNeighbor[] @relation("SourceArtist")
+  neighborsAsNeighbor ArtistNeighbor[] @relation("NeighborArtist")
+  campaigns           Campaign[]
+
+  @@map("artists")
+}
+
+model Track {
+  id           String   @id @default(cuid())
+  spotifyId    String   @unique @map("spotify_id")
+  name         String
+  artistId     String   @map("artist_id")
+  artistName   String   @map("artist_name")
+  albumName    String   @map("album_name")
+  durationMs   Int      @map("duration_ms")
+  popularity   Int
+  releaseDate  String   @map("release_date")
+  previewUrl   String?  @map("preview_url")
+  spotifyUrl   String   @map("spotify_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  artist        Artist         @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  playlistItems PlaylistItem[]
+
+  @@map("tracks")
+}
+
+// ─── Neighbor Intelligence ───────────────────────────────────────────────────
+
+model ArtistNeighbor {
+  id                  String  @id @default(cuid())
+  sourceArtistId      String  @map("source_artist_id")
+  neighborArtistId    String  @map("neighbor_artist_id")
+  adjacencyScore      Float   @map("adjacency_score")
+  followerRatioScore  Float   @map("follower_ratio_score")
+  popularityGapScore  Float   @map("popularity_gap_score")
+  genreOverlapScore   Float   @map("genre_overlap_score")
+  eraSimilarityScore  Float   @map("era_similarity_score")
+  sizeBucket          String  @map("size_bucket")
+  closedLoopRisk      String  @map("closed_loop_risk")
+  explanation         String
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  sourceArtist   Artist @relation("SourceArtist", fields: [sourceArtistId], references: [id], onDelete: Cascade)
+  neighborArtist Artist @relation("NeighborArtist", fields: [neighborArtistId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceArtistId, neighborArtistId])
+  @@map("artist_neighbors")
+}
+
+// ─── Playlists ───────────────────────────────────────────────────────────────
+
+model Playlist {
+  id           String    @id @default(cuid())
+  spotifyId    String?   @unique @map("spotify_id")
+  name         String
+  description  String    @default("")
+  trackCount   Int       @default(0) @map("track_count")
+  ownerId      String    @map("owner_id")
+  campaignId   String?   @unique @map("campaign_id")
+  healthScore  Float?    @map("health_score")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  campaign  Campaign?        @relation(fields: [campaignId], references: [id])
+  items     PlaylistItem[]
+  snapshots PlaylistSnapshot[]
+
+  @@map("playlists")
+}
+
+model PlaylistItem {
+  id         String   @id @default(cuid())
+  playlistId String   @map("playlist_id")
+  trackId    String   @map("track_id")
+  position   Int
+  source     String   @default("own")
+  addedAt    DateTime @default(now()) @map("added_at")
+
+  playlist Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  track    Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@unique([playlistId, position])
+  @@map("playlist_items")
+}
+
+model PlaylistSnapshot {
+  id             String   @id @default(cuid())
+  playlistId     String   @map("playlist_id")
+  followerCount  Int      @default(0) @map("follower_count")
+  trackCount     Int      @default(0) @map("track_count")
+  healthScore    Float?   @map("health_score")
+  snapshotDate   DateTime @default(now()) @map("snapshot_date")
+
+  playlist Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+
+  @@map("playlist_snapshots")
+}
+
+// ─── Campaigns ───────────────────────────────────────────────────────────────
+
+model Campaign {
+  id                    String    @id @default(cuid())
+  userId                String    @map("user_id")
+  artistId              String    @map("artist_id")
+  name                  String
+  status                String    @default("draft")
+  currentWeek           Int       @default(0) @map("current_week")
+  releaseReadinessScore Float?    @map("release_readiness_score")
+  startDate             DateTime? @map("start_date")
+  endDate               DateTime? @map("end_date")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  artist          Artist            @relation(fields: [artistId], references: [id])
+  playlist        Playlist?
+  tasks           CampaignTask[]
+  recommendations Recommendation[]
+  manualMetrics   ManualMetric[]
+  experiments     Experiment[]
+
+  @@map("campaigns")
+}
+
+model CampaignTask {
+  id          String    @id @default(cuid())
+  campaignId  String    @map("campaign_id")
+  week        Int
+  title       String
+  description String
+  category    String
+  status      String    @default("pending")
+  dueDate     DateTime? @map("due_date")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("campaign_tasks")
+}
+
+// ─── Recommendations ─────────────────────────────────────────────────────────
+
+model Recommendation {
+  id          String   @id @default(cuid())
+  campaignId  String   @map("campaign_id")
+  type        String
+  severity    String
+  title       String
+  description String
+  actionable  Boolean  @default(true)
+  dismissed   Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("recommendations")
+}
+
+// ─── Metrics & Experiments ───────────────────────────────────────────────────
+
+model ManualMetric {
+  id         String   @id @default(cuid())
+  campaignId String   @map("campaign_id")
+  week       Int
+  metricType String   @map("metric_type")
+  value      Float
+  notes      String?
+  recordedAt DateTime @default(now()) @map("recorded_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("manual_metrics")
+}
+
+model Experiment {
+  id         String   @id @default(cuid())
+  campaignId String   @map("campaign_id")
+  name       String
+  hypothesis String
+  status     String   @default("planned")
+  outcome    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("experiments")
+}
