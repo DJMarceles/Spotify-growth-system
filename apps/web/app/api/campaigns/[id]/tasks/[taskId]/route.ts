@@ -1,0 +1,35 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { updateTaskStatus } from '@/lib/services/campaign-manager';
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; taskId: string }> },
+) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { id, taskId } = await params;
+
+  const campaign = await db.campaign.findUnique({ where: { id } });
+  if (!campaign) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
+  if (campaign.userId !== session.user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
+  try {
+    const body = await request.json();
+    const { status } = body;
+
+    if (!['pending', 'in-progress', 'completed', 'skipped'].includes(status)) {
+      return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+    }
+
+    await updateTaskStatus(taskId, status);
+    return NextResponse.json({ status });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Update failed';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
