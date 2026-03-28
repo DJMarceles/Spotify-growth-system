@@ -96,6 +96,16 @@ export async function proposeContainerPlaylist(artistId: string): Promise<Contai
   // Step 3: Interleave / sequence tracks
   const sequenced = sequenceTracks(ownTracks, neighborTracks, artist.id);
 
+  if (sequenced.length === 0) {
+    throw new Error('Not enough tracks available to build a container playlist.');
+  }
+
+  if (sequenced.length < CONTAINER_MIN_TRACKS) {
+    console.warn(
+      `Container playlist has ${sequenced.length} tracks, below minimum of ${CONTAINER_MIN_TRACKS}`,
+    );
+  }
+
   // Step 4: Compute health metrics
   const biggerNeighborIds = new Set(
     artist.neighborsAsSource
@@ -380,7 +390,7 @@ function sequenceTracks(
     const canPickNeighbor = neighborQueue.length > 0;
 
     if (canPickOwn && canPickNeighbor) {
-      // Alternate: prefer neighbor after own tracks
+      // Alternate: prefer neighbor after own tracks to distribute evenly
       if (consecutiveOwn > 0) {
         picked = neighborQueue.shift();
       } else {
@@ -396,9 +406,12 @@ function sequenceTracks(
       if (idx >= 0) {
         picked = neighborQueue.splice(idx, 1)[0];
       } else {
-        // All remaining are same artist — just take first
         picked = neighborQueue.shift();
       }
+    } else if (ownQueue.length > 0) {
+      // Own tracks remain but hit consecutive limit — force-add with constraint note
+      // This happens when neighbors are exhausted; accept minor violation over dropping tracks
+      picked = ownQueue.shift();
     }
 
     if (!picked) break;

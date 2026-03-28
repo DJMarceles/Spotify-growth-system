@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -17,6 +17,9 @@ export async function GET(
     const playlist = await getContainerPlaylist(id);
     if (!playlist) {
       return NextResponse.json({ error: 'Playlist not found' }, { status: 404 });
+    }
+    if (playlist.ownerId !== session.user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     return NextResponse.json(playlist);
   } catch (error) {

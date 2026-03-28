@@ -24,7 +24,10 @@ export default async function PlaylistsPage() {
             <PlaylistCard
               key={playlist.id}
               playlist={{
-                ...playlist,
+                id: playlist.id,
+                name: playlist.name,
+                trackCount: playlist.trackCount,
+                healthScore: playlist.healthScore,
                 createdAt: playlist.createdAt.toISOString(),
                 items: playlist.items.map((item) => ({
                   track: {
