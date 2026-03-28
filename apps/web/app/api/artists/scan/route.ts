@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getSpotifyClient } from '@/lib/spotify';
 import { scanArtist } from '@/lib/services/artist-scanner';
+import { analyzeNeighbors } from '@/lib/services/neighbor-intelligence';
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -21,9 +22,18 @@ export async function POST(request: NextRequest) {
     }
 
     const client = await getSpotifyClient();
-    const result = await scanArtist(client, spotifyArtistId);
+    const scanResult = await scanArtist(client, spotifyArtistId);
 
-    return NextResponse.json(result);
+    // Auto-analyze neighbors after scan.
+    // Non-blocking: if scoring service is down, scan still succeeds.
+    let analysis = null;
+    try {
+      analysis = await analyzeNeighbors(scanResult.artist.id);
+    } catch (error) {
+      console.warn('Neighbor analysis failed (non-blocking):', error);
+    }
+
+    return NextResponse.json({ ...scanResult, analysis });
   } catch (error) {
     console.error('Artist scan failed:', error);
     const message = error instanceof Error ? error.message : 'Failed to scan artist';

@@ -3,6 +3,9 @@ import { db } from '@/lib/db';
 import { ArtistProfileHeader } from '@/components/artists/artist-profile-header';
 import { RelatedArtistsList } from '@/components/artists/related-artists-list';
 import { TopTracksList } from '@/components/artists/top-tracks-list';
+import { NeighborSummary } from '@/components/artists/neighbor-summary';
+import { NeighborScoreCard } from '@/components/artists/neighbor-score-card';
+import { AnalyzeButton } from '@/components/artists/analyze-button';
 
 interface ArtistDetailPageProps {
   params: Promise<{ id: string }>;
@@ -19,12 +22,12 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
         take: 10,
       },
       relatedFrom: {
-        include: {
-          relatedArtist: true,
-        },
-        orderBy: {
-          relatedArtist: { followerCount: 'desc' },
-        },
+        include: { relatedArtist: true },
+        orderBy: { relatedArtist: { followerCount: 'desc' } },
+      },
+      neighborsAsSource: {
+        include: { neighborArtist: true },
+        orderBy: { adjacencyScore: 'desc' },
       },
     },
   });
@@ -34,6 +37,41 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
   }
 
   const relatedArtists = artist.relatedFrom.map((edge) => edge.relatedArtist);
+  const neighbors = artist.neighborsAsSource;
+  const hasAnalysis = neighbors.length > 0;
+
+  // Compute summary from scored neighbors
+  let overallRisk: 'low' | 'medium' | 'high' = 'high';
+  let summary = {
+    totalAnalyzed: 0,
+    slightlyLarger: 0,
+    similar: 0,
+    smaller: 0,
+    muchLarger: 0,
+    averageAdjacencyScore: 0,
+  };
+
+  if (hasAnalysis) {
+    const buckets = { smaller: 0, similar: 0, 'slightly-larger': 0, 'much-larger': 0 };
+    let totalScore = 0;
+    for (const n of neighbors) {
+      const b = n.sizeBucket as keyof typeof buckets;
+      if (b in buckets) buckets[b]++;
+      totalScore += n.adjacencyScore;
+    }
+    const avgScore = totalScore / neighbors.length;
+    const smallerRatio = (buckets.smaller + buckets.similar) / neighbors.length;
+    overallRisk = smallerRatio >= 0.7 ? 'high' : smallerRatio >= 0.5 ? 'medium' : 'low';
+
+    summary = {
+      totalAnalyzed: neighbors.length,
+      slightlyLarger: buckets['slightly-larger'],
+      similar: buckets.similar,
+      smaller: buckets.smaller,
+      muchLarger: buckets['much-larger'],
+      averageAdjacencyScore: Math.round(avgScore * 10) / 10,
+    };
+  }
 
   return (
     <div className="space-y-10">
@@ -47,6 +85,41 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
         trackCount={artist.tracks.length}
         relatedCount={relatedArtists.length}
       />
+
+      {/* Neighbor Intelligence Section */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-foreground">Neighbor Intelligence</h2>
+          <AnalyzeButton artistId={artist.id} hasExistingAnalysis={hasAnalysis} />
+        </div>
+
+        {hasAnalysis ? (
+          <>
+            <NeighborSummary
+              overallRisk={overallRisk}
+              totalAnalyzed={summary.totalAnalyzed}
+              slightlyLarger={summary.slightlyLarger}
+              similar={summary.similar}
+              smaller={summary.smaller}
+              muchLarger={summary.muchLarger}
+              averageScore={summary.averageAdjacencyScore}
+            />
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {neighbors.map((neighbor) => (
+                <NeighborScoreCard key={neighbor.id} neighbor={neighbor} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+            <p className="text-muted-foreground">
+              No neighbor analysis yet. Click &quot;Analyze Neighbors&quot; to score related artists
+              and detect closed-loop risk.
+            </p>
+          </div>
+        )}
+      </section>
 
       <section>
         <h2 className="mb-4 text-xl font-semibold text-foreground">Top Tracks</h2>
