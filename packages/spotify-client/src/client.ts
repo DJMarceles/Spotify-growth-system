@@ -149,6 +149,40 @@ export class SpotifyClient {
     });
   }
 
+  async getPlaylist(playlistId: string): Promise<{
+    id: string;
+    name: string;
+    description: string;
+    followers: { total: number };
+    tracks: { total: number; items: Array<{ track: SpotifyTrackResponse; added_at: string }> };
+    snapshot_id: string;
+    external_urls: { spotify: string };
+  }> {
+    return this.request(`/playlists/${playlistId}`);
+  }
+
+  async removeTracksFromPlaylist(
+    playlistId: string,
+    trackUris: string[],
+  ): Promise<{ snapshot_id: string }> {
+    return this.request(`/playlists/${playlistId}/tracks`, {
+      method: 'DELETE',
+      body: JSON.stringify({
+        tracks: trackUris.map((uri) => ({ uri })),
+      }),
+    });
+  }
+
+  async replacePlaylistTracks(
+    playlistId: string,
+    trackUris: string[],
+  ): Promise<{ snapshot_id: string }> {
+    return this.request(`/playlists/${playlistId}/tracks`, {
+      method: 'PUT',
+      body: JSON.stringify({ uris: trackUris }),
+    });
+  }
+
   async getCurrentUserProfile(): Promise<{ id: string; display_name: string }> {
     return this.request('/me');
   }

@@ -177,9 +177,10 @@ model Playlist {
   trackCount   Int       @default(0) @map("track_count")
   ownerId      String    @map("owner_id")
   campaignId   String?   @unique @map("campaign_id")
-  healthScore  Float?    @map("health_score")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  healthScore     Float?    @map("health_score")
+  lastRefreshedAt DateTime? @map("last_refreshed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   campaign  Campaign?        @relation(fields: [campaignId], references: [id])
   items     PlaylistItem[]

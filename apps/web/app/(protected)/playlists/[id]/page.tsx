@@ -1,5 +1,8 @@
 import { notFound } from 'next/navigation';
 import { getContainerPlaylist } from '@/lib/services/playlist-builder';
+import { getPlaylistHealthHistory } from '@/lib/services/playlist-execution';
+import { PlaylistActions } from '@/components/playlists/playlist-actions';
+import { HealthTrend } from '@/components/playlists/health-trend';
 
 interface PlaylistDetailPageProps {
   params: Promise<{ id: string }>;
@@ -7,7 +10,10 @@ interface PlaylistDetailPageProps {
 
 export default async function PlaylistDetailPage({ params }: PlaylistDetailPageProps) {
   const { id } = await params;
-  const playlist = await getContainerPlaylist(id);
+  const [playlist, healthHistory] = await Promise.all([
+    getContainerPlaylist(id),
+    getPlaylistHealthHistory(id),
+  ]);
 
   if (!playlist) notFound();
 
@@ -17,23 +23,26 @@ export default async function PlaylistDetailPage({ params }: PlaylistDetailPageP
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">{playlist.name}</h1>
-        <p className="mt-1 text-muted-foreground">{playlist.description}</p>
-        {playlist.spotifyId && (
-          <a
-            href={`https://open.spotify.com/playlist/${playlist.spotifyId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2 inline-block text-sm text-primary hover:underline"
-          >
-            Open on Spotify
-          </a>
-        )}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">{playlist.name}</h1>
+          <p className="mt-1 text-muted-foreground">{playlist.description}</p>
+          {playlist.spotifyId && (
+            <a
+              href={`https://open.spotify.com/playlist/${playlist.spotifyId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block text-sm text-primary hover:underline"
+            >
+              Open on Spotify
+            </a>
+          )}
+        </div>
+        <PlaylistActions playlistId={playlist.id} hasSpotifyId={!!playlist.spotifyId} />
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <StatCard label="Total Tracks" value={playlist.trackCount} />
         <StatCard label="Own Tracks" value={ownTracks.length} />
         <StatCard label="Neighbor Tracks" value={neighborTracks.length} />
@@ -50,7 +59,31 @@ export default async function PlaylistDetailPage({ params }: PlaylistDetailPageP
               : undefined
           }
         />
+        <StatCard
+          label="Last Refreshed"
+          value={
+            playlist.lastRefreshedAt
+              ? new Date(playlist.lastRefreshedAt).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                })
+              : 'Never'
+          }
+        />
       </div>
+
+      {/* Health Trend */}
+      <section>
+        <h2 className="mb-4 text-xl font-semibold text-foreground">Health Trend</h2>
+        <HealthTrend
+          snapshots={healthHistory.snapshots.map((s) => ({
+            ...s,
+            snapshotDate: s.snapshotDate.toISOString(),
+          }))}
+          trend={healthHistory.trend}
+          followerGrowth={healthHistory.followerGrowth}
+        />
+      </section>
 
       {/* Track List */}
       <section>
@@ -85,27 +118,6 @@ export default async function PlaylistDetailPage({ params }: PlaylistDetailPageP
           ))}
         </div>
       </section>
-
-      {/* Snapshots */}
-      {playlist.snapshots.length > 0 && (
-        <section>
-          <h2 className="mb-4 text-xl font-semibold text-foreground">Health History</h2>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <div className="space-y-2">
-              {playlist.snapshots.map((snapshot) => (
-                <div key={snapshot.id} className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">
-                    {new Date(snapshot.snapshotDate).toLocaleDateString()}
-                  </span>
-                  <span className="font-medium text-foreground">
-                    {snapshot.healthScore !== null ? Math.round(snapshot.healthScore) : '—'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
     </div>
   );
 }
