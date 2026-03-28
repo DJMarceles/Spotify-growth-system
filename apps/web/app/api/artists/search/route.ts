@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
 import { getSpotifyClient } from '@/lib/spotify';
 
 export async function GET(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const query = request.nextUrl.searchParams.get('q');
 
   if (!query || query.trim().length < 2) {

@@ -18,6 +18,14 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
         orderBy: { popularity: 'desc' },
         take: 10,
       },
+      relatedFrom: {
+        include: {
+          relatedArtist: true,
+        },
+        orderBy: {
+          relatedArtist: { followerCount: 'desc' },
+        },
+      },
     },
   });
 
@@ -25,21 +33,7 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
     notFound();
   }
 
-  // Get related artists by looking up who Spotify says is related.
-  // At scan time we persisted related artists as Artist rows.
-  // We need a different approach since we don't store the "related" edge yet
-  // (that comes with the Neighbor Intelligence Engine in Sprint 3).
-  // For now, fetch all artists that were scanned around the same time
-  // (within 5 minutes of this artist's lastFetchedAt) as a proxy.
-  const scanWindow = new Date(artist.lastFetchedAt.getTime() - 5 * 60 * 1000);
-  const relatedArtists = await db.artist.findMany({
-    where: {
-      id: { not: artist.id },
-      lastFetchedAt: { gte: scanWindow },
-    },
-    orderBy: { followerCount: 'desc' },
-    take: 20,
-  });
+  const relatedArtists = artist.relatedFrom.map((edge) => edge.relatedArtist);
 
   return (
     <div className="space-y-10">
@@ -62,7 +56,7 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
       <section>
         <h2 className="mb-4 text-xl font-semibold text-foreground">Related Artists</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          Artists in Spotify&apos;s related graph. Size labels show follower ratio relative to{' '}
+          Artists from Spotify&apos;s related graph. Size labels show follower ratio relative to{' '}
           {artist.name}.
         </p>
         <RelatedArtistsList

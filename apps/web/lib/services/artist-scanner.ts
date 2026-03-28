@@ -63,6 +63,9 @@ export async function scanArtist(
     spotifyRelated.map((sa) => upsertArtist(sa)),
   );
 
+  // Persist the "related artist" edges from Spotify's graph
+  await persistRelatedEdges(artist.id, relatedArtists.map((ra) => ra.id));
+
   // Persist top tracks
   const topTracks = await Promise.all(
     spotifyTracks.map((st) => upsertTrack(st, artist.id)),
@@ -116,6 +119,11 @@ export async function getScannedArtist(artistId: string) {
       tracks: {
         orderBy: { popularity: 'desc' },
         take: 10,
+      },
+      relatedFrom: {
+        include: {
+          relatedArtist: true,
+        },
       },
       neighborsAsSource: {
         include: {
@@ -210,7 +218,27 @@ function upsertTrack(st: SpotifyTrackResponse, artistId: string) {
       popularity: st.popularity,
       releaseDate: st.album.release_date,
       previewUrl: st.preview_url,
+      spotifyUrl: st.external_urls.spotify,
+      // Don't overwrite artistId — keep the first artist association
+      // to avoid silently re-parenting tracks across scans.
     },
+  });
+}
+
+async function persistRelatedEdges(sourceArtistId: string, relatedArtistIds: string[]) {
+  // Delete stale edges and replace with fresh Spotify data
+  await db.relatedArtist.deleteMany({
+    where: { sourceArtistId },
+  });
+
+  if (relatedArtistIds.length === 0) return;
+
+  await db.relatedArtist.createMany({
+    data: relatedArtistIds.map((relatedArtistId) => ({
+      sourceArtistId,
+      relatedArtistId,
+    })),
+    skipDuplicates: true,
   });
 }
 
