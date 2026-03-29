@@ -185,25 +185,40 @@ function upsertArtist(sa: SpotifyArtistResponse) {
     ? sa.images.sort((a, b) => b.width - a.width)[0].url
     : null;
 
+  // Defensive: Spotify API may return followers as object {total: N} or
+  // in some edge cases differently. Extract the value robustly.
+  const rawFollowers = sa.followers;
+  const followerCount: number =
+    typeof rawFollowers === 'object' && rawFollowers !== null
+      ? (rawFollowers as { total: number }).total ?? 0
+      : typeof rawFollowers === 'number'
+        ? rawFollowers
+        : 0;
+
+  const popularity: number =
+    typeof sa.popularity === 'number' ? sa.popularity : 0;
+
+  console.log(`[upsert] ${sa.name}: followers raw=${JSON.stringify(rawFollowers)} → ${followerCount}, popularity=${popularity}`);
+
   return db.artist.upsert({
     where: { spotifyId: sa.id },
     create: {
       spotifyId: sa.id,
       name: sa.name,
-      genres: sa.genres,
-      followerCount: sa.followers.total,
-      popularity: sa.popularity,
+      genres: sa.genres ?? [],
+      followerCount,
+      popularity,
       imageUrl,
-      spotifyUrl: sa.external_urls.spotify,
+      spotifyUrl: sa.external_urls?.spotify ?? '',
       lastFetchedAt: new Date(),
     },
     update: {
       name: sa.name,
-      genres: sa.genres,
-      followerCount: sa.followers.total,
-      popularity: sa.popularity,
+      genres: sa.genres ?? [],
+      followerCount,
+      popularity,
       imageUrl,
-      spotifyUrl: sa.external_urls.spotify,
+      spotifyUrl: sa.external_urls?.spotify ?? '',
       lastFetchedAt: new Date(),
     },
   });
@@ -211,6 +226,10 @@ function upsertArtist(sa: SpotifyArtistResponse) {
 
 function upsertTrack(st: SpotifyTrackResponse, artistId: string) {
   const primaryArtist = st.artists[0];
+  const popularity = typeof st.popularity === 'number' ? st.popularity : 0;
+  const durationMs = typeof st.duration_ms === 'number' ? st.duration_ms : 0;
+
+  console.log(`[upsert-track] ${st.name}: popularity=${st.popularity} (raw type: ${typeof st.popularity}), duration_ms=${st.duration_ms}`);
 
   return db.track.upsert({
     where: { spotifyId: st.id },
@@ -219,24 +238,22 @@ function upsertTrack(st: SpotifyTrackResponse, artistId: string) {
       name: st.name,
       artistId,
       artistName: primaryArtist?.name ?? 'Unknown',
-      albumName: st.album.name,
-      durationMs: st.duration_ms,
-      popularity: st.popularity,
-      releaseDate: st.album.release_date,
-      previewUrl: st.preview_url,
-      spotifyUrl: st.external_urls.spotify,
+      albumName: st.album?.name ?? '',
+      durationMs,
+      popularity,
+      releaseDate: st.album?.release_date ?? '',
+      previewUrl: st.preview_url ?? null,
+      spotifyUrl: st.external_urls?.spotify ?? '',
     },
     update: {
       name: st.name,
       artistName: primaryArtist?.name ?? 'Unknown',
-      albumName: st.album.name,
-      durationMs: st.duration_ms,
-      popularity: st.popularity,
-      releaseDate: st.album.release_date,
-      previewUrl: st.preview_url,
-      spotifyUrl: st.external_urls.spotify,
-      // Don't overwrite artistId — keep the first artist association
-      // to avoid silently re-parenting tracks across scans.
+      albumName: st.album?.name ?? '',
+      durationMs,
+      popularity,
+      releaseDate: st.album?.release_date ?? '',
+      previewUrl: st.preview_url ?? null,
+      spotifyUrl: st.external_urls?.spotify ?? '',
     },
   });
 }
