@@ -114,7 +114,9 @@ export async function getDashboardStats(userId: string) {
         tasks: true,
       },
     }),
-    db.artist.count(),
+    db.artist.count({
+      where: { campaigns: { some: { userId } } },
+    }),
     db.playlist.count({ where: { ownerId: userId } }),
   ]);
 

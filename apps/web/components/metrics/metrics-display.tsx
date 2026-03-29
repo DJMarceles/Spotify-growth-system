@@ -50,8 +50,11 @@ function MetricCard({ trend }: { trend: MetricTrend }) {
       {trend.dataPoints.length > 1 && (
         <div className="mt-3 flex items-end gap-0.5" style={{ height: 32 }}>
           {trend.dataPoints.map((dp, i) => {
-            const max = Math.max(...trend.dataPoints.map((d) => d.value));
-            const height = max > 0 ? (dp.value / max) * 100 : 0;
+            const values = trend.dataPoints.map((d) => d.value);
+            const max = Math.max(...values);
+            const min = Math.min(...values);
+            const range = max - min;
+            const height = range > 0 ? ((dp.value - min) / range) * 100 : 50;
             return (
               <div
                 key={i}

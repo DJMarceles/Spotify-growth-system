@@ -56,21 +56,33 @@ export function ExperimentList({ campaignId, experiments }: ExperimentListProps)
     }
   };
 
+  const [statusError, setStatusError] = useState<string | null>(null);
+
   const handleStatusUpdate = async (experimentId: string, status: string, outcome?: string) => {
+    setStatusError(null);
     try {
-      await fetch(`/api/campaigns/${campaignId}/experiments`, {
+      const res = await fetch(`/api/campaigns/${campaignId}/experiments`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ experimentId, status, outcome }),
       });
+      if (!res.ok) {
+        let message = 'Failed to update experiment';
+        try { const data = await res.json(); message = data.error ?? message; } catch { /* */ }
+        throw new Error(message);
+      }
       router.refresh();
-    } catch {
-      // Silent fail for status updates
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : 'Failed to update experiment');
     }
   };
 
   return (
     <div className="space-y-4">
+      {statusError && (
+        <p className="text-sm text-red-600 dark:text-red-400">{statusError}</p>
+      )}
+
       {experiments.length > 0 ? (
         <div className="space-y-3">
           {experiments.map((exp) => (
