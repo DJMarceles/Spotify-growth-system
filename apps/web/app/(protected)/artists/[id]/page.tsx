@@ -102,7 +102,7 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-foreground">Neighbor Intelligence</h2>
-          <AnalyzeButton artistId={artist.id} hasExistingAnalysis={hasAnalysis} />
+          <AnalyzeButton artistId={artist.id} hasExistingAnalysis={hasAnalysis} relatedArtistCount={relatedArtists.length} />
         </div>
 
         {hasAnalysis ? (
@@ -123,6 +123,13 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
               ))}
             </div>
           </>
+        ) : relatedArtists.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+            <p className="text-muted-foreground">
+              Spotify has no related artist data for this artist. This typically happens with very
+              small or new artists. Try scanning a more established artist to see neighbor analysis.
+            </p>
+          </div>
         ) : (
           <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
             <p className="text-muted-foreground">

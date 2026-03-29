@@ -6,14 +6,19 @@ import { useRouter } from 'next/navigation';
 interface AnalyzeButtonProps {
   artistId: string;
   hasExistingAnalysis: boolean;
+  relatedArtistCount: number;
 }
 
-export function AnalyzeButton({ artistId, hasExistingAnalysis }: AnalyzeButtonProps) {
+export function AnalyzeButton({ artistId, hasExistingAnalysis, relatedArtistCount }: AnalyzeButtonProps) {
   const router = useRouter();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const canAnalyze = relatedArtistCount > 0;
+
   const handleAnalyze = async () => {
+    if (!canAnalyze) return;
+
     setIsAnalyzing(true);
     setError(null);
 
@@ -34,6 +39,22 @@ export function AnalyzeButton({ artistId, hasExistingAnalysis }: AnalyzeButtonPr
       setIsAnalyzing(false);
     }
   };
+
+  if (!canAnalyze) {
+    return (
+      <div className="text-right">
+        <button
+          disabled
+          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground opacity-50 cursor-not-allowed"
+        >
+          Analyze Neighbors
+        </button>
+        <p className="mt-1 text-xs text-muted-foreground">
+          No related artists found on Spotify. Try a more popular artist.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div>
