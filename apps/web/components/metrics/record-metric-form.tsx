@@ -28,7 +28,8 @@ export function RecordMetricForm({ campaignId, currentWeek }: RecordMetricFormPr
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!value) return;
+    const parsed = parseFloat(value);
+    if (!value || isNaN(parsed)) return;
 
     setLoading(true);
     setError(null);
@@ -38,7 +39,7 @@ export function RecordMetricForm({ campaignId, currentWeek }: RecordMetricFormPr
       const res = await fetch(`/api/campaigns/${campaignId}/metrics`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ week, metricType, value: parseFloat(value), notes: notes || undefined }),
+        body: JSON.stringify({ week, metricType, value: parsed, notes: notes || undefined }),
       });
 
       if (!res.ok) {

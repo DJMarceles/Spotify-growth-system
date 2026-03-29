@@ -65,7 +65,7 @@ def compute_container_health(req: ContainerHealthRequest) -> ContainerHealthResp
     )
 
     return ContainerHealthResponse(
-        score=round(total, 1),
+        score=round(max(0.0, min(100.0, total)), 1),
         dimensions=dimensions,
         warnings=warnings,
     )

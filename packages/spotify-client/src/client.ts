@@ -212,19 +212,27 @@ export class SpotifyClient {
       await this.refreshAccessToken(this.tokens.refreshToken);
     }
 
-    const response = await fetch(`${SPOTIFY_API_BASE}${endpoint}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${this.tokens.accessToken}`,
-        'Content-Type': 'application/json',
-        ...init?.headers,
-      },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
 
-    if (!response.ok) {
-      throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
+    try {
+      const response = await fetch(`${SPOTIFY_API_BASE}${endpoint}`, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${this.tokens.accessToken}`,
+          'Content-Type': 'application/json',
+          ...init?.headers,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
+      }
+
+      return response.json() as Promise<T>;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return response.json() as Promise<T>;
   }
 }

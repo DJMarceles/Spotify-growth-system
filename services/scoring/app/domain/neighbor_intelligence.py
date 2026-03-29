@@ -51,12 +51,15 @@ def compute_neighbor_score(req: NeighborIntelligenceRequest) -> NeighborIntellig
         size_bucket, follower_ratio_score, popularity_gap_score, genre_overlap_score
     )
 
+    def _clamp(v: float) -> float:
+        return round(max(0.0, min(100.0, v)), 1)
+
     return NeighborIntelligenceResponse(
-        adjacency_score=round(adjacency_score, 1),
-        follower_ratio_score=round(follower_ratio_score, 1),
-        popularity_gap_score=round(popularity_gap_score, 1),
-        genre_overlap_score=round(genre_overlap_score, 1),
-        era_similarity_score=round(era_similarity_score, 1),
+        adjacency_score=_clamp(adjacency_score),
+        follower_ratio_score=_clamp(follower_ratio_score),
+        popularity_gap_score=_clamp(popularity_gap_score),
+        genre_overlap_score=_clamp(genre_overlap_score),
+        era_similarity_score=_clamp(era_similarity_score),
         size_bucket=size_bucket,
         closed_loop_risk=closed_loop_risk,
         explanation=explanation,

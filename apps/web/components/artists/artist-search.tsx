@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 interface SearchResult {
   spotifyId: string;
@@ -21,39 +21,41 @@ export function ArtistSearch({ onScan, isScanning }: ArtistSearchProps) {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const search = useCallback(
-    (q: string) => {
-      if (searchTimeout) clearTimeout(searchTimeout);
+  // Clean up timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
 
-      if (q.trim().length < 2) {
-        setResults([]);
-        return;
-      }
+  const search = useCallback((q: string) => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-      const timeout = setTimeout(async () => {
-        setIsSearching(true);
-        setSearchError(null);
-        try {
-          const res = await fetch(`/api/artists/search?q=${encodeURIComponent(q.trim())}`);
-          if (res.ok) {
-            const data = await res.json();
-            setResults(data.artists);
-          } else {
-            setSearchError('Search failed. Please try again.');
-          }
-        } catch {
-          setSearchError('Search failed. Check your connection.');
-        } finally {
-          setIsSearching(false);
+    if (q.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+
+    timeoutRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      setSearchError(null);
+      try {
+        const res = await fetch(`/api/artists/search?q=${encodeURIComponent(q.trim())}`);
+        if (res.ok) {
+          const data = await res.json();
+          setResults(data.artists);
+        } else {
+          setSearchError('Search failed. Please try again.');
         }
-      }, 350);
-
-      setSearchTimeout(timeout);
-    },
-    [searchTimeout],
-  );
+      } catch {
+        setSearchError('Search failed. Check your connection.');
+      } finally {
+        setIsSearching(false);
+      }
+    }, 350);
+  }, []);
 
   return (
     <div className="space-y-4">

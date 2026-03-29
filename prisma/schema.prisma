@@ -141,6 +141,7 @@ model Track {
   artist        Artist         @relation(fields: [artistId], references: [id], onDelete: Cascade)
   playlistItems PlaylistItem[]
 
+  @@index([artistId])
   @@map("tracks")
 }
 
@@ -164,6 +165,7 @@ model ArtistNeighbor {
   neighborArtist Artist @relation("NeighborArtist", fields: [neighborArtistId], references: [id], onDelete: Cascade)
 
   @@unique([sourceArtistId, neighborArtistId])
+  @@index([sourceArtistId])
   @@map("artist_neighbors")
 }
 
@@ -182,10 +184,11 @@ model Playlist {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  campaign  Campaign?        @relation(fields: [campaignId], references: [id])
+  campaign  Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   items     PlaylistItem[]
   snapshots PlaylistSnapshot[]
 
+  @@index([ownerId])
   @@map("playlists")
 }
 
@@ -214,6 +217,7 @@ model PlaylistSnapshot {
 
   playlist Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
 
+  @@index([playlistId])
   @@map("playlist_snapshots")
 }
 
@@ -233,13 +237,15 @@ model Campaign {
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
   user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  artist          Artist            @relation(fields: [artistId], references: [id])
+  artist          Artist            @relation(fields: [artistId], references: [id], onDelete: Cascade)
   playlist        Playlist?
   tasks           CampaignTask[]
   recommendations Recommendation[]
   manualMetrics   ManualMetric[]
   experiments     Experiment[]
 
+  @@index([userId])
+  @@index([artistId])
   @@map("campaigns")
 }
 
@@ -257,6 +263,7 @@ model CampaignTask {
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
+  @@index([campaignId])
   @@map("campaign_tasks")
 }
 
@@ -275,6 +282,7 @@ model Recommendation {
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
+  @@index([campaignId])
   @@map("recommendations")
 }
 
@@ -291,6 +299,7 @@ model ManualMetric {
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
+  @@index([campaignId])
   @@map("manual_metrics")
 }
 

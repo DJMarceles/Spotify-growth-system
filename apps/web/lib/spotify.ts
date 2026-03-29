@@ -4,13 +4,16 @@ import { db } from './db';
 
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 
+// In-flight refresh promises keyed by userId to prevent concurrent refresh races
+const refreshLocks = new Map<string, Promise<{ accessToken: string; refreshToken: string; expiresAt: Date }>>();
+
 /**
  * Returns an authenticated SpotifyClient for the current session user.
  *
  * Handles token refresh automatically:
  * 1. Loads tokens from SpotifyAccount table
- * 2. If expired, refreshes via Spotify OAuth
- * 3. Persists new tokens back to DB
+ * 2. If expired, refreshes via Spotify OAuth (with mutex to prevent races)
+ * 3. Persists new tokens back to DB in a transaction
  * 4. Returns a ready-to-use client
  *
  * Throws if no session or no Spotify account is linked.
@@ -21,8 +24,10 @@ export async function getSpotifyClient(): Promise<SpotifyClient> {
     throw new Error('No authenticated session');
   }
 
+  const userId = session.user.id;
+
   const spotifyAccount = await db.spotifyAccount.findUnique({
-    where: { userId: session.user.id },
+    where: { userId },
   });
 
   if (!spotifyAccount) {
@@ -34,32 +39,18 @@ export async function getSpotifyClient(): Promise<SpotifyClient> {
   // Refresh if token expires within the next 5 minutes
   const REFRESH_BUFFER_MS = 5 * 60 * 1000;
   if (expiresAt.getTime() < Date.now() + REFRESH_BUFFER_MS) {
-    const refreshed = await refreshSpotifyTokens(refreshToken);
+    // Deduplicate concurrent refreshes for the same user
+    let refreshPromise = refreshLocks.get(userId);
+    if (!refreshPromise) {
+      refreshPromise = refreshAndPersist(userId, refreshToken);
+      refreshLocks.set(userId, refreshPromise);
+      refreshPromise.finally(() => refreshLocks.delete(userId));
+    }
+
+    const refreshed = await refreshPromise;
     accessToken = refreshed.accessToken;
     refreshToken = refreshed.refreshToken;
     expiresAt = refreshed.expiresAt;
-
-    await db.spotifyAccount.update({
-      where: { userId: session.user.id },
-      data: {
-        accessToken,
-        refreshToken,
-        expiresAt,
-      },
-    });
-
-    // Also update the NextAuth Account table so both stay in sync
-    await db.account.updateMany({
-      where: {
-        userId: session.user.id,
-        provider: 'spotify',
-      },
-      data: {
-        access_token: accessToken,
-        refresh_token: refreshToken,
-        expires_at: Math.floor(expiresAt.getTime() / 1000),
-      },
-    });
   }
 
   const client = new SpotifyClient({
@@ -75,6 +66,35 @@ export async function getSpotifyClient(): Promise<SpotifyClient> {
   });
 
   return client;
+}
+
+async function refreshAndPersist(
+  userId: string,
+  refreshToken: string,
+): Promise<{ accessToken: string; refreshToken: string; expiresAt: Date }> {
+  const refreshed = await refreshSpotifyTokens(refreshToken);
+
+  // Update both tables atomically
+  await db.$transaction([
+    db.spotifyAccount.update({
+      where: { userId },
+      data: {
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken,
+        expiresAt: refreshed.expiresAt,
+      },
+    }),
+    db.account.updateMany({
+      where: { userId, provider: 'spotify' },
+      data: {
+        access_token: refreshed.accessToken,
+        refresh_token: refreshed.refreshToken,
+        expires_at: Math.floor(refreshed.expiresAt.getTime() / 1000),
+      },
+    }),
+  ]);
+
+  return refreshed;
 }
 
 async function refreshSpotifyTokens(refreshToken: string): Promise<{

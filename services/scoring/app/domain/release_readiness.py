@@ -50,7 +50,7 @@ def compute_release_readiness(req: ReleaseReadinessRequest) -> ReleaseReadinessR
     )
 
     return ReleaseReadinessResponse(
-        score=round(total, 1),
+        score=round(max(0.0, min(100.0, total)), 1),
         dimensions=dimensions,
         blockers=blockers,
     )
