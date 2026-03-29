@@ -55,6 +55,22 @@ export async function scanArtist(
     spotifyClient.getArtistTopTracks(spotifyArtistId),
   ]);
 
+  console.log('[scan] Spotify artist response:', JSON.stringify({
+    id: spotifyArtist.id,
+    name: spotifyArtist.name,
+    followers: spotifyArtist.followers,
+    popularity: spotifyArtist.popularity,
+    genres: spotifyArtist.genres,
+  }));
+  console.log('[scan] Related artists count:', spotifyRelated.length);
+  console.log('[scan] Top tracks count:', spotifyTracks.length);
+  if (spotifyTracks.length > 0) {
+    console.log('[scan] First track:', JSON.stringify({
+      name: spotifyTracks[0].name,
+      popularity: spotifyTracks[0].popularity,
+    }));
+  }
+
   // Persist the main artist
   const artist = await upsertArtist(spotifyArtist);
 
