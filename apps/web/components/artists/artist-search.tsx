@@ -20,6 +20,7 @@ export function ArtistSearch({ onScan, isScanning }: ArtistSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const search = useCallback(
@@ -33,14 +34,17 @@ export function ArtistSearch({ onScan, isScanning }: ArtistSearchProps) {
 
       const timeout = setTimeout(async () => {
         setIsSearching(true);
+        setSearchError(null);
         try {
           const res = await fetch(`/api/artists/search?q=${encodeURIComponent(q.trim())}`);
           if (res.ok) {
             const data = await res.json();
             setResults(data.artists);
+          } else {
+            setSearchError('Search failed. Please try again.');
           }
         } catch {
-          console.error('Search failed');
+          setSearchError('Search failed. Check your connection.');
         } finally {
           setIsSearching(false);
         }
@@ -71,6 +75,10 @@ export function ArtistSearch({ onScan, isScanning }: ArtistSearchProps) {
           </div>
         )}
       </div>
+
+      {searchError && (
+        <p className="text-sm text-red-600 dark:text-red-400">{searchError}</p>
+      )}
 
       {results.length > 0 && (
         <div className="rounded-lg border border-border bg-card">

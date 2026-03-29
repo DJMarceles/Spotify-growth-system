@@ -48,7 +48,8 @@ export function AppNav() {
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
             className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
-            aria-label="Toggle menu"
+            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileOpen}
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               {mobileOpen ? (

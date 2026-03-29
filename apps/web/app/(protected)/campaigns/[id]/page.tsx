@@ -8,6 +8,8 @@ import { RecordMetricForm } from '@/components/metrics/record-metric-form';
 import { MetricsDisplay } from '@/components/metrics/metrics-display';
 import { ExperimentList } from '@/components/metrics/experiment-list';
 import { RecommendationPanel } from '@/components/campaigns/recommendation-panel';
+import { LinkPlaylist } from '@/components/campaigns/link-playlist';
+import Link from 'next/link';
 
 interface CampaignDetailPageProps {
   params: Promise<{ id: string }>;
@@ -34,7 +36,9 @@ export default async function CampaignDetailPage({ params }: CampaignDetailPageP
         <div>
           <h1 className="text-2xl font-bold text-foreground">{campaign.name}</h1>
           <p className="mt-1 text-muted-foreground">
-            {campaign.artist.name}
+            <Link href={`/artists/${campaign.artistId}`} className="hover:underline">
+              {campaign.artist.name}
+            </Link>
             {campaign.startDate && (
               <> — Started {new Date(campaign.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</>
             )}
@@ -69,12 +73,14 @@ export default async function CampaignDetailPage({ params }: CampaignDetailPageP
       </div>
 
       {/* Linked Playlist */}
-      {campaign.playlist && (
+      {campaign.playlist ? (
         <section className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Container Playlist</p>
-              <p className="font-medium text-foreground">{campaign.playlist.name}</p>
+              <Link href={`/playlists/${campaign.playlist.id}`} className="font-medium text-foreground hover:underline">
+                {campaign.playlist.name}
+              </Link>
             </div>
             {campaign.playlist.healthScore !== null && (
               <div className="text-right">
@@ -83,6 +89,11 @@ export default async function CampaignDetailPage({ params }: CampaignDetailPageP
               </div>
             )}
           </div>
+        </section>
+      ) : (
+        <section>
+          <h2 className="mb-3 text-lg font-semibold text-foreground">Container Playlist</h2>
+          <LinkPlaylist campaignId={campaign.id} artistId={campaign.artistId} />
         </section>
       )}
 

@@ -98,7 +98,7 @@ export default async function DashboardPage() {
               >
                 <div className="flex items-center gap-3">
                   {campaign.artistImageUrl && (
-                    <img src={campaign.artistImageUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
+                    <img src={campaign.artistImageUrl} alt={campaign.artistName} className="h-8 w-8 rounded-full object-cover" />
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-foreground">{campaign.name}</p>

@@ -94,7 +94,7 @@ export function RecommendationPanel({ campaignId, recommendations }: Recommendat
           disabled={generating}
           className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50"
         >
-          {generating ? 'Analyzing...' : 'Refresh Analysis'}
+          {generating ? 'Analyzing...' : recommendations.length > 0 ? 'Refresh Analysis' : 'Generate Recommendations'}
         </button>
       </div>
 

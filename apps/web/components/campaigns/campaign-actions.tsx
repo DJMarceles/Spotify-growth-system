@@ -14,7 +14,8 @@ export function CampaignActions({ campaignId, status, currentWeek }: CampaignAct
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleAction = async (action: string) => {
+  const handleAction = async (action: string, confirm?: string) => {
+    if (confirm && !window.confirm(confirm)) return;
     setLoading(action);
     setError(null);
 
@@ -44,7 +45,7 @@ export function CampaignActions({ campaignId, status, currentWeek }: CampaignAct
         )}
         {status === 'active' && (
           <>
-            <ActionBtn label="Advance Week" loading={loading === 'advance'} disabled={loading !== null} onClick={() => handleAction('advance')} />
+            <ActionBtn label="Advance Week" loading={loading === 'advance'} disabled={loading !== null} onClick={() => handleAction('advance', `Advance campaign to week ${currentWeek + 1}? This cannot be undone.`)} />
             <ActionBtn label="Pause" loading={loading === 'pause'} disabled={loading !== null} onClick={() => handleAction('pause')} variant="outline" />
             <ActionBtn label="Check Readiness" loading={loading === 'readiness'} disabled={loading !== null} onClick={() => handleAction('readiness')} variant="outline" />
           </>
