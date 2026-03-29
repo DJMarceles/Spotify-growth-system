@@ -7,6 +7,7 @@ import { TaskList } from '@/components/campaigns/task-list';
 import { RecordMetricForm } from '@/components/metrics/record-metric-form';
 import { MetricsDisplay } from '@/components/metrics/metrics-display';
 import { ExperimentList } from '@/components/metrics/experiment-list';
+import { RecommendationPanel } from '@/components/campaigns/recommendation-panel';
 
 interface CampaignDetailPageProps {
   params: Promise<{ id: string }>;
@@ -85,22 +86,22 @@ export default async function CampaignDetailPage({ params }: CampaignDetailPageP
         </section>
       )}
 
-      {/* Blockers / Recommendations */}
-      {campaign.recommendations.length > 0 && (
+      {/* Recommendations */}
+      {campaign.status !== 'draft' && (
         <section>
           <h2 className="mb-3 text-lg font-semibold text-foreground">Recommendations</h2>
-          <div className="space-y-2">
-            {campaign.recommendations.map((rec) => (
-              <div key={rec.id} className={`rounded-lg border px-4 py-3 ${
-                rec.severity === 'critical' ? 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950' :
-                rec.severity === 'warning' ? 'border-yellow-300 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950' :
-                'border-border bg-card'
-              }`}>
-                <p className="text-sm font-medium text-foreground">{rec.title}</p>
-                <p className="text-xs text-muted-foreground">{rec.description}</p>
-              </div>
-            ))}
-          </div>
+          <RecommendationPanel
+            campaignId={campaign.id}
+            recommendations={campaign.recommendations.map((rec) => ({
+              id: rec.id,
+              type: rec.type,
+              severity: rec.severity,
+              title: rec.title,
+              description: rec.description,
+              actionable: rec.actionable,
+              dismissed: rec.dismissed,
+            }))}
+          />
         </section>
       )}
 
