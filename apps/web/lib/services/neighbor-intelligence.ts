@@ -3,19 +3,16 @@ import { db } from '../db';
 const SCORING_SERVICE_URL = process.env.SCORING_SERVICE_URL ?? 'http://localhost:8000';
 const SCORING_TIMEOUT_MS = 30_000;
 
+interface ArtistInput {
+  follower_count: number;
+  popularity: number;
+  genres: string[];
+  latest_release_date: string | null;
+}
+
 interface ScoringRequest {
-  source_artist: {
-    follower_count: number;
-    popularity: number;
-    genres: string[];
-    latest_release_date: string | null;
-  };
-  candidate_artist: {
-    follower_count: number;
-    popularity: number;
-    genres: string[];
-    latest_release_date: string | null;
-  };
+  source_artist: ArtistInput;
+  candidate_artist: ArtistInput;
 }
 
 interface ScoringResponse {
@@ -102,6 +99,13 @@ export async function analyzeNeighbors(artistId: string): Promise<AnalysisResult
     sourceLatestRelease,
     relatedArtists,
   );
+
+  if (scoredNeighbors.length === 0 && relatedArtists.length > 0) {
+    throw new Error(
+      `All ${relatedArtists.length} neighbor scoring attempts failed. ` +
+      'Check scoring service connectivity.',
+    );
+  }
 
   // Persist to ArtistNeighbor table (replace existing)
   await db.artistNeighbor.deleteMany({
@@ -300,7 +304,14 @@ async function scoreAllNeighbors(
   return { scored: results, failedCount };
 }
 
+let scoringServiceAvailable: boolean | null = null;
+
 async function callScoringService(request: ScoringRequest): Promise<ScoringResponse> {
+  // If we already know the service is down, skip the network call
+  if (scoringServiceAvailable === false) {
+    return computeScoreLocally(request);
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SCORING_TIMEOUT_MS);
 
@@ -317,8 +328,185 @@ async function callScoringService(request: ScoringRequest): Promise<ScoringRespo
       throw new Error(`Scoring service error (${response.status}): ${body}`);
     }
 
+    scoringServiceAvailable = true;
     return response.json();
+  } catch (error) {
+    // Connection refused / timeout → fall back to local scoring
+    if (scoringServiceAvailable === null) {
+      console.warn('Scoring service unavailable, using local TypeScript scoring');
+      scoringServiceAvailable = false;
+    }
+    return computeScoreLocally(request);
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// ─── Local TypeScript scoring (mirrors Python neighbor_intelligence.py) ──────
+
+const IDEAL_RATIO_MIN = 1.0;
+const IDEAL_RATIO_MAX = 10.0;
+const IDEAL_RATIO_SWEET = 3.0;
+const IDEAL_POP_GAP_MAX = 20;
+
+const WEIGHT_FOLLOWER_RATIO = 0.30;
+const WEIGHT_POPULARITY_GAP = 0.25;
+const WEIGHT_GENRE_OVERLAP = 0.25;
+const WEIGHT_ERA_SIMILARITY = 0.20;
+
+function clamp(v: number): number {
+  return Math.round(Math.max(0, Math.min(100, v)) * 10) / 10;
+}
+
+function computeScoreLocally(req: ScoringRequest): ScoringResponse {
+  const src = req.source_artist;
+  const cand = req.candidate_artist;
+
+  const followerRatioScore = scoreFollowerRatio(src.follower_count, cand.follower_count);
+  const popularityGapScore = scorePopularityGap(src.popularity, cand.popularity);
+  const genreOverlapScore = scoreGenreOverlap(src.genres, cand.genres);
+  const eraSimilarityScore = scoreEraSimilarity(src.latest_release_date, cand.latest_release_date);
+
+  const adjacencyScore =
+    followerRatioScore * WEIGHT_FOLLOWER_RATIO +
+    popularityGapScore * WEIGHT_POPULARITY_GAP +
+    genreOverlapScore * WEIGHT_GENRE_OVERLAP +
+    eraSimilarityScore * WEIGHT_ERA_SIMILARITY;
+
+  const sizeBucket = determineSizeBucket(src.follower_count, cand.follower_count);
+  const closedLoopRisk = determineClosedLoopRisk(sizeBucket, adjacencyScore);
+  const explanation = buildExplanation(sizeBucket, followerRatioScore, popularityGapScore, genreOverlapScore);
+
+  return {
+    adjacency_score: clamp(adjacencyScore),
+    follower_ratio_score: clamp(followerRatioScore),
+    popularity_gap_score: clamp(popularityGapScore),
+    genre_overlap_score: clamp(genreOverlapScore),
+    era_similarity_score: clamp(eraSimilarityScore),
+    size_bucket: sizeBucket,
+    closed_loop_risk: closedLoopRisk,
+    explanation,
+  };
+}
+
+function scoreFollowerRatio(sourceFollowers: number, candidateFollowers: number): number {
+  if (sourceFollowers === 0) return 50;
+  const ratio = candidateFollowers / sourceFollowers;
+
+  if (ratio < 0.5) {
+    return Math.max(0, 20 * ratio);
+  } else if (ratio < IDEAL_RATIO_MIN) {
+    return 10 + 40 * ratio;
+  } else if (ratio <= IDEAL_RATIO_MAX) {
+    const distanceFromSweet = Math.abs(ratio - IDEAL_RATIO_SWEET);
+    const maxDistance = Math.max(IDEAL_RATIO_SWEET - IDEAL_RATIO_MIN, IDEAL_RATIO_MAX - IDEAL_RATIO_SWEET);
+    return 100 - (distanceFromSweet / maxDistance) * 30;
+  } else {
+    const over = ratio - IDEAL_RATIO_MAX;
+    return Math.max(0, 70 - over * 3);
+  }
+}
+
+function scorePopularityGap(sourcePop: number, candidatePop: number): number {
+  const gap = candidatePop - sourcePop;
+
+  if (gap < -10) {
+    return Math.max(0, 30 + gap * 2);
+  } else if (gap < 0) {
+    return 50 + gap * 2;
+  } else if (gap <= IDEAL_POP_GAP_MAX) {
+    return 100 - Math.abs(gap - 10) * 2;
+  } else {
+    const over = gap - IDEAL_POP_GAP_MAX;
+    return Math.max(0, 80 - over * 4);
+  }
+}
+
+function scoreGenreOverlap(sourceGenres: string[], candidateGenres: string[]): number {
+  if (!sourceGenres.length || !candidateGenres.length) return 30;
+
+  const sourceSet = new Set(sourceGenres.map((g) => g.toLowerCase()));
+  const candidateSet = new Set(candidateGenres.map((g) => g.toLowerCase()));
+
+  let intersection = 0;
+  for (const g of sourceSet) {
+    if (candidateSet.has(g)) intersection++;
+  }
+  const union = new Set([...sourceSet, ...candidateSet]).size;
+
+  if (union === 0) return 30;
+
+  const jaccard = intersection / union;
+  return Math.min(100, jaccard * 120);
+}
+
+function scoreEraSimilarity(sourceDate: string | null, candidateDate: string | null): number {
+  if (!sourceDate || !candidateDate) return 50;
+
+  try {
+    const srcDate = parseReleaseDate(sourceDate);
+    const candDate = parseReleaseDate(candidateDate);
+    const diffDays = Math.abs(srcDate.getTime() - candDate.getTime()) / (1000 * 60 * 60 * 24);
+
+    if (diffDays <= 365) return 100;
+    if (diffDays <= 730) return 80;
+    if (diffDays <= 1825) return 50;
+    return Math.max(10, 50 - ((diffDays - 1825) / 365) * 10);
+  } catch {
+    return 50;
+  }
+}
+
+function parseReleaseDate(dateStr: string): Date {
+  // Try YYYY-MM-DD, then YYYY-MM, then YYYY
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return new Date(dateStr);
+  if (/^\d{4}-\d{2}$/.test(dateStr)) return new Date(`${dateStr}-01`);
+  if (/^\d{4}$/.test(dateStr)) return new Date(`${dateStr}-01-01`);
+  throw new Error(`Cannot parse date: ${dateStr}`);
+}
+
+function determineSizeBucket(sourceFollowers: number, candidateFollowers: number): string {
+  if (sourceFollowers === 0) return 'similar';
+  const ratio = candidateFollowers / sourceFollowers;
+
+  if (ratio < 0.8) return 'smaller';
+  if (ratio <= 1.5) return 'similar';
+  if (ratio <= 10) return 'slightly-larger';
+  return 'much-larger';
+}
+
+function determineClosedLoopRisk(sizeBucket: string, adjacencyScore: number): string {
+  if (sizeBucket === 'smaller' && adjacencyScore < 40) return 'high';
+  if ((sizeBucket === 'smaller' || sizeBucket === 'similar') && adjacencyScore < 60) return 'medium';
+  return 'low';
+}
+
+function buildExplanation(
+  sizeBucket: string,
+  followerScore: number,
+  popScore: number,
+  genreScore: number,
+): string {
+  const parts: string[] = [];
+
+  const bucketLabels: Record<string, string> = {
+    smaller: 'smaller than source',
+    similar: 'similar size to source',
+    'slightly-larger': 'slightly larger than source (ideal)',
+    'much-larger': 'much larger than source',
+  };
+  parts.push(`Artist is ${bucketLabels[sizeBucket] ?? sizeBucket}.`);
+
+  if (followerScore >= 70) parts.push('Good follower ratio for audience adjacency.');
+  else if (followerScore >= 40) parts.push('Moderate follower ratio.');
+  else parts.push('Follower ratio is outside ideal range.');
+
+  if (genreScore >= 70) parts.push('Strong genre alignment.');
+  else if (genreScore >= 40) parts.push('Partial genre overlap.');
+  else parts.push('Weak genre overlap — may reduce context coherence.');
+
+  if (popScore >= 70) parts.push('Popularity gap is in the sweet spot.');
+  else if (popScore < 40) parts.push('Popularity gap is too wide or inverted.');
+
+  return parts.join(' ');
 }
