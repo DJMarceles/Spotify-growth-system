@@ -1,7 +1,12 @@
 import { notFound } from 'next/navigation';
 import { getCampaign } from '@/lib/services/campaign-manager';
+import { getMetricsSummary } from '@/lib/services/metrics';
+import { listExperiments } from '@/lib/services/metrics';
 import { CampaignActions } from '@/components/campaigns/campaign-actions';
 import { TaskList } from '@/components/campaigns/task-list';
+import { RecordMetricForm } from '@/components/metrics/record-metric-form';
+import { MetricsDisplay } from '@/components/metrics/metrics-display';
+import { ExperimentList } from '@/components/metrics/experiment-list';
 
 interface CampaignDetailPageProps {
   params: Promise<{ id: string }>;
@@ -9,7 +14,11 @@ interface CampaignDetailPageProps {
 
 export default async function CampaignDetailPage({ params }: CampaignDetailPageProps) {
   const { id } = await params;
-  const campaign = await getCampaign(id);
+  const [campaign, metricsTrends, experiments] = await Promise.all([
+    getCampaign(id),
+    getMetricsSummary(id),
+    listExperiments(id),
+  ]);
 
   if (!campaign) notFound();
 
@@ -92,6 +101,33 @@ export default async function CampaignDetailPage({ params }: CampaignDetailPageP
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* Metrics */}
+      {campaign.status !== 'draft' && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-foreground">Metrics</h2>
+          <RecordMetricForm campaignId={campaign.id} currentWeek={campaign.currentWeek} />
+          <MetricsDisplay trends={metricsTrends} />
+        </section>
+      )}
+
+      {/* Experiments */}
+      {campaign.status !== 'draft' && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-foreground">Experiments</h2>
+          <ExperimentList
+            campaignId={campaign.id}
+            experiments={experiments.map((e) => ({
+              id: e.id,
+              name: e.name,
+              hypothesis: e.hypothesis,
+              status: e.status,
+              outcome: e.outcome,
+              createdAt: e.createdAt.toISOString(),
+            }))}
+          />
         </section>
       )}
 
