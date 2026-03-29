@@ -57,16 +57,26 @@ export function TaskList({ campaignId, tasks, currentWeek }: TaskListProps) {
 function TaskRow({ campaignId, task }: { campaignId: string; task: Task }) {
   const router = useRouter();
   const [updating, setUpdating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleStatusChange = async (newStatus: string) => {
     setUpdating(true);
+    setError(null);
     try {
       const res = await fetch(`/api/campaigns/${campaignId}/tasks/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (res.ok) router.refresh();
+      if (!res.ok) {
+        let message = 'Failed to update task';
+        try { const data = await res.json(); message = data.error ?? message; } catch { /* not JSON */ }
+        setError(message);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError('Failed to update task');
     } finally {
       setUpdating(false);
     }
@@ -105,6 +115,7 @@ function TaskRow({ campaignId, task }: { campaignId: string; task: Task }) {
           {task.title}
         </p>
         <p className="text-xs text-muted-foreground">{task.description}</p>
+        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
       </div>
       <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${categoryColors[task.category] ?? categoryColors['baseline-reset']}`}>
         {task.category}

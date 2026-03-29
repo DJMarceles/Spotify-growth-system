@@ -26,7 +26,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
     }
 
-    await updateTaskStatus(taskId, status);
+    await updateTaskStatus(id, taskId, status);
     return NextResponse.json({ status });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Update failed';

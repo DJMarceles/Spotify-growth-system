@@ -63,7 +63,7 @@ export async function createCampaign(
   if (!artist) throw new Error('Artist not found. Scan the artist first.');
 
   const existing = await db.campaign.findFirst({
-    where: { userId, artistId, status: { in: ['draft', 'active'] } },
+    where: { userId, artistId, status: { in: ['draft', 'active', 'paused'] } },
   });
   if (existing) {
     throw new Error(`An active or draft campaign already exists for this artist (${existing.name}).`);
@@ -80,40 +80,39 @@ export async function createCampaign(
  * Activates a draft campaign: generates tasks for all 8 weeks and sets week 1.
  */
 export async function activateCampaign(campaignId: string): Promise<void> {
-  const campaign = await db.campaign.findUnique({
-    where: { id: campaignId },
-    include: { tasks: true },
-  });
-
-  if (!campaign) throw new Error('Campaign not found.');
-  if (campaign.status !== 'draft') {
-    throw new Error(`Cannot activate campaign in "${campaign.status}" status.`);
-  }
-
   const startDate = new Date();
 
-  // Generate tasks for all 8 weeks
-  const tasks = TASK_TEMPLATES.map((template) => {
-    const dueDate = new Date(startDate);
-    dueDate.setDate(dueDate.getDate() + template.week * 7);
+  await db.$transaction(async (tx) => {
+    const campaign = await tx.campaign.findUnique({
+      where: { id: campaignId },
+    });
 
-    return {
-      campaignId,
-      week: template.week,
-      title: template.title,
-      description: template.description,
-      category: template.category,
-      dueDate,
-    };
-  });
+    if (!campaign) throw new Error('Campaign not found.');
+    if (campaign.status !== 'draft') {
+      throw new Error(`Cannot activate campaign in "${campaign.status}" status.`);
+    }
 
-  await db.$transaction([
-    db.campaignTask.createMany({ data: tasks }),
-    db.campaign.update({
+    // Generate tasks for all 8 weeks
+    const tasks = TASK_TEMPLATES.map((template) => {
+      const dueDate = new Date(startDate);
+      dueDate.setDate(dueDate.getDate() + template.week * 7);
+
+      return {
+        campaignId,
+        week: template.week,
+        title: template.title,
+        description: template.description,
+        category: template.category,
+        dueDate,
+      };
+    });
+
+    await tx.campaignTask.createMany({ data: tasks });
+    await tx.campaign.update({
       where: { id: campaignId },
       data: { status: 'active', currentWeek: 1, startDate },
-    }),
-  ]);
+    });
+  });
 }
 
 /**
@@ -167,11 +166,15 @@ export async function togglePause(campaignId: string): Promise<{ status: string 
  * Updates a task's status.
  */
 export async function updateTaskStatus(
+  campaignId: string,
   taskId: string,
   status: 'pending' | 'in-progress' | 'completed' | 'skipped',
 ): Promise<void> {
   const task = await db.campaignTask.findUnique({ where: { id: taskId } });
   if (!task) throw new Error('Task not found.');
+  if (task.campaignId !== campaignId) {
+    throw new Error('Task does not belong to this campaign.');
+  }
 
   await db.campaignTask.update({
     where: { id: taskId },
@@ -299,6 +302,12 @@ export async function linkPlaylistToCampaign(
   campaignId: string,
   playlistId: string,
 ): Promise<void> {
+  const playlist = await db.playlist.findUnique({ where: { id: playlistId } });
+  if (!playlist) throw new Error('Playlist not found.');
+  if (playlist.campaignId && playlist.campaignId !== campaignId) {
+    throw new Error('Playlist is already linked to another campaign.');
+  }
+
   await db.playlist.update({
     where: { id: playlistId },
     data: { campaignId },
