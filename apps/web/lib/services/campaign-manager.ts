@@ -192,7 +192,7 @@ export async function getCampaign(campaignId: string) {
       artist: true,
       playlist: true,
       tasks: { orderBy: [{ week: 'asc' }, { createdAt: 'asc' }] },
-      recommendations: { orderBy: { createdAt: 'desc' }, take: 10 },
+      recommendations: { where: { dismissed: false }, orderBy: { createdAt: 'desc' }, take: 10 },
     },
   });
 }

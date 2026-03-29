@@ -329,7 +329,7 @@ function analyzeMetrics(campaign: CampaignWithRelations, recs: RecommendationInp
     if (listenerMetrics.length >= 2) {
       const latest = listenerMetrics[listenerMetrics.length - 1];
       const previous = listenerMetrics[listenerMetrics.length - 2];
-      if (latest.value < previous.value * 0.9) {
+      if (previous.value > 0 && latest.value < previous.value * 0.9) {
         recs.push({
           type: 'missing-metrics',
           severity: 'warning',
